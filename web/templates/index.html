@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NvimAnywhere</title>
+  <link rel="stylesheet" href="/static/css/base.css">
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>NvimAnywhere</h1>
+      <p class="hint">No login. Ephemeral. Download or push to keep your work.</p>
+
+      <form id="startForm">
+        <label for="repo">Repo URL (optional)</label>
+        <input id="repo" name="repo" type="url" placeholder="https://github.com/owner/repo.git" autocomplete="off"
+          autocapitalize="off" spellcheck="false" />
+        <button id="startBtn" type="submit">Start session</button>
+        <div id="msg" class="hint"></div>
+        <div id="err" class="error" role="alert" aria-live="polite"></div>
+      </form>
+    </div>
+  </div>
+  <script src="/static/js/start.js" defer></script>
+</body>
+
+</html>

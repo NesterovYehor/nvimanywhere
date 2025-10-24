@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>NvimAnywhere — Session</title>
+
+  <link rel="stylesheet" href="/static/css/xterm.css" />
+  <link rel="stylesheet" href="/static/css/base.css" />
+</head>
+
+<body>
+  <header class="app-header">
+    <strong>NvimAnywhere</strong>
+  </header>
+
+  <main class="app-main">
+    <div id="terminal" class="term"></div>
+  </main>
+
+  <!-- Load xterm first -->
+  <script src="/static/js/xterm.js"></script>
+  <script src="/static/js/xterm-addon-fit.js"></script>
+  <script>
+    window.NVIM_ANYWHERE = {token: "{{.Token}}"};
+  </script>
+  <!-- Then your session script -->
+  <script src="/static/js/session.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,118 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #0b0e14;
+  color: #e6e6e6;
+}
+
+/* Page layout: header on top, main fills the rest */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* ensure full-viewport layout */
+}
+
+/* (Optional) old card layout – unused on session page, safe to keep */
+.wrap {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 560px;
+  background: #111522;
+  border: 1px solid #22283a;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: .5rem;
+  font-size: .9rem;
+  color: #b8c0d0;
+}
+
+input,
+button {
+  width: 100%;
+  padding: .8rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #2a3146;
+  background: #0f1320;
+  color: #e6e6e6;
+}
+
+input::placeholder {
+  color: #7f8aa3;
+}
+
+button {
+  margin-top: 12px;
+  background: #3a6df0;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button[disabled] {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.hint {
+  margin-top: .75rem;
+  font-size: .9rem;
+  color: #9aa6bf;
+}
+
+.error {
+  margin-top: .75rem;
+  color: #ff6b6b;
+}
+
+/* --- Session page layout --- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #23283b;
+}
+
+.status {
+  margin-left: auto;
+  color: #8b93b4;
+}
+
+.app-main {
+  flex: 1;            /* fill remaining vertical space */
+  min-height: 0;      /* allow child to shrink instead of overflowing */
+  padding: 8px;
+  display: flex;      /* so .term can flex */
+}
+
+.term {
+  flex: 1;
+  height: 100%;       /* fill .app-main */
+  border: 1px solid #23283b;
+  border-radius: 8px;
+  background: #0d1226;
+  overflow: hidden;
+  box-sizing: border-box; /* border does not eat into content area */
+}
+
+/* Help xterm fill the box */
+.xterm,
+.xterm-viewport,
+.xterm-screen {
+  height: 100% !important;
+}
+
