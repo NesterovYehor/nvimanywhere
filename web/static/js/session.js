@@ -128,3 +128,7 @@ if ('ResizeObserver' in window && container) {
   ro.observe(container);
 }
 
+ws.addEventListener("close", () => {
+  window.location.href = "/"; 
+});
+

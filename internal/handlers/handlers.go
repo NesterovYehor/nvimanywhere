@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"nvimanywhere/internal/config"
@@ -84,15 +86,13 @@ func (h *Handler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 
 	temp := h.templates["index"]
 	if temp == nil {
-		http.Error(w, "Inner server error", http.StatusServiceUnavailable)
-		slog.Error("Unknown template")
+		handleError(w, "Inner server error", fmt.Errorf("Unknown template"), http.StatusServiceUnavailable)
 		return
 	}
 	if err := temp.Execute(w, struct {
 		Title string
 	}{Title: "NvimAnywhere"}); err != nil {
-		http.Error(w, "Inner server error", http.StatusServiceUnavailable)
-		slog.Error("Failed to make a response: err", "err", err)
+		handleError(w, "Inner server error", fmt.Errorf("Failed to make a response: err"), http.StatusServiceUnavailable)
 		return
 	}
 }
@@ -149,36 +149,43 @@ func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 		handleError(w, "Failed to create websocket conn", err, http.StatusInternalServerError)
 		return
 	}
-	slog.Info("Conn to WS created")
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	if err := sess.Start(ctx); err != nil {
-		handleError(w, "Failed to start session", err, http.StatusServiceUnavailable)
-
-	}
 	onClose := closeAll(ctx, conn, sess)
 
-	ptyR, ptyW, wait, err := sess.Attach(ctx)
+	ptyR, ptyW, wait, err := startSession(ctx, sess)
 	if err != nil {
-		onClose("attache failed: " + err.Error())
+		handleError(w, "", err, http.StatusInternalServerError)
 		return
 	}
+
 	bridge := wsio.NewBridge(conn, ptyR, ptyW, onResize(ctx, sess))
 
-	go bridge.PTYToWS(ctx)
+	go func() {
+		if err := bridge.PTYToWS(ctx); err != nil {
+			errCh <- err
+		}
+	}()
 
-	go bridge.WSToPTY(ctx)
+	go func() {
+		if err := bridge.WSToPTY(ctx); err != nil {
+			errCh <- err
+		}
+	}()
 
-	go bridge.WatchWait(wait)
+	go func() {
+		if err := bridge.WatchWait(wait); err != nil {
+			errCh <- err
+		}
+	}()
+
 	select {
 	case <-done:
 		onClose("Finishing")
 		return
-	case <-errCh:
-		err = <-errCh
-		handleError(w, "", err, http.StatusInternalServerError)
-		onClose(err.Error())
+	case e := <-errCh:
+		onClose(e.Error())
 		return
 	}
 }
@@ -190,14 +197,14 @@ func closeAll(ctx context.Context, ws *websocket.Conn, sess *sessions.Session) f
 	return func(reason string) {
 		sendControl(ctx, ws, "exit", reason)
 		_ = ws.Close(websocket.StatusNormalClosure, reason)
+		slog.Info("WS closing")
 
 		if err := sess.Close(ctx); err != nil {
 			slog.Error(err.Error())
-
 		}
-		slog.Error(reason)
-		close(done)
-
+		if reason != "" {
+			slog.Error(reason)
+		}
 	}
 }
 
@@ -242,4 +249,12 @@ func handleError(w http.ResponseWriter, reason string, err error, status int) {
 		slog.Error(reason)
 
 	}
+}
+
+func startSession(ctx context.Context, s *sessions.Session) (io.Reader, io.Writer, func() error, error) {
+
+	if err := s.Start(ctx); err != nil {
+		return nil, nil, nil, fmt.Errorf("Failed to start session: %w", err)
+	}
+	return s.Attach(ctx)
 }
