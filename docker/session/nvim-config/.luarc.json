@@ -1,0 +1,12 @@
+{
+    "diagnostics.globals": [
+        "vim",
+        "options",
+        "cmp"
+    ],
+    "diagnostics.disable": [
+        "different-requires",
+        "duplicate-index",
+        "unused-local"
+    ]
+}

@@ -41,12 +41,10 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	cfg := &config.Config{
-		Htpp:      &config.HTTP{Host: "", Port: "8080"},
-		Container: &config.Container{Image: "nvimanywhere-session:dev"},
-		BaseDir:   "/Users/yehornesterov/dev/Go/nvimanywhere/data/workspaces",
+	cfg, err := config.Load("../../config.yaml")
+	if err != nil{
+		return err
 	}
-
 	tc, err := templates.NewTemplateCache()
 	if err != nil {
 		slog.Error(err.Error())

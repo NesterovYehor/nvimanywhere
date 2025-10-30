@@ -20,7 +20,6 @@ import (
 )
 
 var done = make(chan struct{})
-var errCh = make(chan error)
 
 type Handler struct {
 	sessions         map[string]*s.Session
@@ -135,6 +134,7 @@ func (h *Handler) HandleSessionPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
+	var errCh = make(chan error)
 	token := r.URL.Query().Get("token")
 	sess := h.sessions[token]
 	if sess == nil {

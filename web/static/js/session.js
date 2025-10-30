@@ -32,6 +32,7 @@ if (!container) {
 } else {
   term.open(container);
 }
+term.setOption('theme', { background: '#222436' }); // tokyonight night bg
 
 const token = window.NVIM_ANYWHERE?.token;
 if (!token) {

@@ -16,9 +16,9 @@ import (
 )
 
 type Container struct {
-	cli       *client.Client
-	imagePath string
-	id        string
+	cli   *client.Client
+	image string
+	id    string
 }
 
 func NewFactory(cfg config.Container) func() (*Container, error) {
@@ -32,41 +32,52 @@ func NewFactory(cfg config.Container) func() (*Container, error) {
 				return nil, err
 			}
 			return &Container{
-				cli:       cli,
-				imagePath: cfg.Image,
+				cli:   cli,
+				image: cfg.Image,
 			}, nil
 		}
 	}
 }
 
-func (c *Container) Start(ctx context.Context, workdir string, cmd []string) error {
+func (c *Container) Start(ctx context.Context, workspace string, cmd []string) error {
 	since := time.Now()
 	if len(cmd) == 0 {
 		cmd = []string{"nvim"}
 	}
 
+	if c.image == "" {
+		c.image = "ghcr.io/neovim/neovim:v0.10.3"
+	}
+
+	env := []string{
+		"TERM=xterm-256color",
+		"COLORTERM=truecolor",
+		"NVIM_LOG_FILE=/workspace/tmp/nvim.log",
+		"NVIM_LOG_LEVEL=debug",
+	}
+
 	cfg := &container.Config{
-		Image:        c.imagePath,
+		Image:        c.image,
 		Cmd:          cmd,
-		Tty:          true, // PTY for terminal apps
-		OpenStdin:    true, // keep stdin open
+		Tty:          true,
+		OpenStdin:    true,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
-		Env:          []string{"TERM=xterm-256color", "COLORTERM=truecolor"},
+		Env:          env,
 		WorkingDir:   "/workspace",
 	}
 
-	hostCfg := &container.HostConfig{
-		Mounts: []mount.Mount{
-			{
-				Type:     mount.TypeBind,
-				Source:   workdir,      // ← HOST absolute repo path
-				Target:   "/workspace", // ← CONTAINER mount point (matches WorkingDir)
-				ReadOnly: false,
-			},
+	mounts := []mount.Mount{
+		{
+			Type:     mount.TypeBind,
+			Source:   workspace,
+			Target:   "/workspace",
+			ReadOnly: false,
 		},
 	}
+
+	hostCfg := &container.HostConfig{Mounts: mounts}
 	netCfg := &network.NetworkingConfig{}
 
 	resp, err := c.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, "")
@@ -77,10 +88,10 @@ func (c *Container) Start(ctx context.Context, workdir string, cmd []string) err
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return err
 	}
-	slog.Info("Container is starting ")
+	slog.Info("Container is starting", "image", c.image, "id", resp.ID)
 	c.id = resp.ID
 
-	slog.Info(fmt.Sprintf("Finish to prepare container:%v", time.Since(since)))
+	slog.Info(fmt.Sprintf("Finish to prepare container: %v", time.Since(since)))
 	return nil
 }
 
@@ -136,6 +147,5 @@ func (c *Container) ResizePTY(ctx context.Context, cols, rows int) error {
 	if c.id == "" {
 		return errors.ContainerNotStarted
 	}
-
 	return c.cli.ContainerResize(ctx, c.id, container.ResizeOptions{Width: uint(cols), Height: uint(rows)})
 }
