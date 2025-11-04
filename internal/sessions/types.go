@@ -8,7 +8,7 @@ import (
 
 // What the session needs from any container backend.
 type Container interface {
-	Start(ctx context.Context, token string, cmd []string) error
+	Start(ctx context.Context, workdir string, cmd []string) error
 	Attach(ctx context.Context) (r io.Reader, w io.Writer, wait func() error, err error)
 	ResizePTY(ctx context.Context, rows, cols int) error
 	Stop(ctx context.Context) error
@@ -17,10 +17,10 @@ type Container interface {
 
 // Minimal description of a workspace for the backend to mount/configure.
 type Workspace struct {
-	BaseDir string // absolute base for all workspaces
-	Repo    string
-	Env     map[string]string
-	Cmd     []string // default command, e.g. {"nvim"}
+	Path string // absolute base for all workspaces
+	Repo string
+	Env  map[string]string
+	Cmd  []string // default command, e.g. {"nvim"}
 }
 
 // Factory pattern, Go-style: one function you inject at startup.

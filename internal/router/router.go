@@ -1,26 +1,26 @@
 package router
 
 import (
+	"io/fs"
+	"log/slog"
 	"net/http"
+	webfs "nvimanywhere"
+
 	"nvimanywhere/internal/handlers"
-	"path/filepath"
-	"runtime"
 )
 
 func AddRoutes(mux *http.ServeMux, h *handlers.Handler) {
-	_, thisFile, _, ok := runtime.Caller(0) // .../internal/router/router.go
-	if !ok {
-		panic("runtime.Caller failed")
+	staticRoot, err := fs.Sub(webfs.StaticFS, "web/static")
+	if err != nil {
+		slog.Error(err.Error())
+		return
 	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
-	staticDir := filepath.Join(repoRoot, "web", "static")
+	static := http.StripPrefix("/static/",
+		http.FileServer(http.FS(staticRoot)),
+	)
 
 	// Static files
-	mux.Handle("/static/",
-		http.StripPrefix("/static/",
-			http.FileServer(http.Dir(staticDir)),
-		),
-	)
+	mux.Handle("/static/", static)
 	mux.HandleFunc("/health", h.HandleHealth)
 	mux.HandleFunc("/", h.HandleIndex)
 	mux.HandleFunc("/sessions", h.HandleStartSession)

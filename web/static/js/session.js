@@ -31,8 +31,8 @@ if (!container) {
   console.error('Missing <div id="terminal"> in the HTML');
 } else {
   term.open(container);
+  term.focus()
 }
-term.setOption('theme', { background: '#222436' }); // tokyonight night bg
 
 const token = window.NVIM_ANYWHERE?.token;
 if (!token) {
@@ -130,6 +130,7 @@ if ('ResizeObserver' in window && container) {
 }
 
 ws.addEventListener("close", () => {
-  window.location.href = "/"; 
+  window.location.href = "/";
 });
+
 

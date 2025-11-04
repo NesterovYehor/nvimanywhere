@@ -82,7 +82,7 @@ func (c *Container) Start(ctx context.Context, workspace string, cmd []string) e
 
 	resp, err := c.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, "")
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create container: %v", err)
 	}
 
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {

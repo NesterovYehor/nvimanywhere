@@ -16,7 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func New(baseDir, repoUrl string, factory ContainerFactory) (*Session, error) {
+func New(workspacePath, repoUrl string, factory ContainerFactory) (*Session, error) {
 	token, err := newToken(8)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create token")
@@ -24,14 +24,14 @@ func New(baseDir, repoUrl string, factory ContainerFactory) (*Session, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("nil ContainerFactory")
 	}
-	if baseDir == "" {
-		return nil, fmt.Errorf("BaseDir must be absolute")
+	if workspacePath == "" {
+		return nil, fmt.Errorf("Workspace path must be absolute")
 	}
 
 	ws := Workspace{
-		Repo:    repoUrl,
-		BaseDir: baseDir,
-		Cmd:     []string{"nvim", "/workspace"},
+		Repo: repoUrl,
+		Path: workspacePath,
+		Cmd:  []string{"nvim", "/workspace"},
 	}
 
 	return &Session{
@@ -59,9 +59,9 @@ func (s *Session) Start(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return s.c.Start(gctx, filepath.Join(s.ws.BaseDir, s.Token), s.ws.Cmd)
+		return s.c.Start(gctx, filepath.Join(s.ws.Path, s.Token), s.ws.Cmd)
 	})
-	path, err := prepareWorkspaceDir(s.ws.BaseDir, s.Token)
+	path, err := prepareWorkspaceDir(s.ws.Path, s.Token)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (s *Session) Close(ctx context.Context) error {
 	if err := s.c.Remove(ctx); err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
-	if err := os.RemoveAll(filepath.Join(s.ws.BaseDir, s.Token)); err != nil {
+	if err := os.RemoveAll(filepath.Join(s.ws.Path, s.Token)); err != nil {
 		return fmt.Errorf("Failed to remove workspace: %w", err)
 	}
 	return nil
@@ -178,6 +178,7 @@ func prepareWorkspaceDir(base, token string) (string, error) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", err
 	}
+	slog.Info(path)
 	return path, nil
 
 }

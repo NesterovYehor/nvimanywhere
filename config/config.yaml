@@ -1,0 +1,7 @@
+http:
+  host: ""
+  port: "8088"
+
+container:
+  image: "nvimanywhere-session"
+  workspaces_path: "/Users/yehornesterov/dev/Go/nvimanywhere/data/workspaces"

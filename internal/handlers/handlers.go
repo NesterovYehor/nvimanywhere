@@ -59,7 +59,7 @@ func (h *Handler) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		slog.Error(err.Error())
 	}
 
-	sess, err := s.New(h.cfg.BaseDir, data.Repo, h.containerFactory)
+	sess, err := s.New(h.cfg.Container.Workdir, data.Repo, h.containerFactory)
 	if err != nil {
 		http.Error(w, "Failed to create Session:"+err.Error(), http.StatusBadRequest)
 		slog.Error(err.Error())
@@ -67,7 +67,7 @@ func (h *Handler) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	}
 	h.sessions[sess.Token] = sess
 	resp := map[string]string{
-		"url": "http://localhost:8080/sessions/" + sess.Token,
+		"endpoint": "/sessions/" + sess.Token,
 	}
 	if err := respond.Encode(w, int(http.StatusOK), resp); err != nil {
 		slog.Error(err.Error())
@@ -106,13 +106,13 @@ func (h *Handler) HandleSessionPage(w http.ResponseWriter, r *http.Request) {
 	token, ok := tokenFromPath(r)
 	if !ok {
 		http.Error(w, "No token found", http.StatusBadRequest)
-		slog.Error("No session found: token", "token", token)
+		slog.Error("No token found: token", "token", token)
 		return
 	}
 	sess := h.sessions[token]
 	if sess == nil {
 		http.Error(w, "No session found", http.StatusNotFound)
-		slog.Error("No session found")
+		slog.Error("No session found: token", "token", token)
 		return
 	}
 	temp := h.templates["session"]
