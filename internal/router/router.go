@@ -2,18 +2,16 @@ package router
 
 import (
 	"io/fs"
-	"log/slog"
 	"net/http"
 	webfs "nvimanywhere"
 
 	"nvimanywhere/internal/handlers"
 )
 
-func AddRoutes(mux *http.ServeMux, h *handlers.Handler) {
+func AddRoutes(mux *http.ServeMux, h *handlers.Handler) error{
 	staticRoot, err := fs.Sub(webfs.StaticFS, "web/static")
 	if err != nil {
-		slog.Error(err.Error())
-		return
+		return err
 	}
 	static := http.StripPrefix("/static/",
 		http.FileServer(http.FS(staticRoot)),
@@ -26,4 +24,5 @@ func AddRoutes(mux *http.ServeMux, h *handlers.Handler) {
 	mux.HandleFunc("/sessions", h.HandleStartSession)
 	mux.HandleFunc("/sessions/", h.HandleSessionPage)
 	mux.HandleFunc("/pty", h.HandlePTY)
+	return nil
 }

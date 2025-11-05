@@ -5,3 +5,5 @@ http:
 container:
   image: "nvimanywhere-session"
   workspaces_path: "/Users/yehornesterov/dev/Go/nvimanywhere/data/workspaces"
+log_file_path: "/Users/yehornesterov/dev/Go/nvimanywhere/data/logs"
+env: "DEV"

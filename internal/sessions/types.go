@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"io"
+	"log/slog"
 	"time"
 )
 
@@ -46,4 +47,5 @@ type Session struct {
 	factory ContainerFactory
 	state   State
 	lastErr error
+	log     *slog.Logger
 }

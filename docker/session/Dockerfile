@@ -34,7 +34,6 @@ USER nvim
 ENV PATH="/home/nvim/.local/share/nvim/mason/bin:${PATH}"
 
 WORKDIR /home/nvim/.config/nvim
-COPY --chown=nvim:nvim ./nvim-config/ .
 
 RUN nvim --headless "+Lazy! sync" "+qall"
 

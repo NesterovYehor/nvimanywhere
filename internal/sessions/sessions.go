@@ -16,7 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func New(workspacePath, repoUrl string, factory ContainerFactory) (*Session, error) {
+func New(workspacePath, repoUrl string, factory ContainerFactory, log *slog.Logger) (*Session, error) {
 	token, err := newToken(8)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create token")
@@ -40,12 +40,13 @@ func New(workspacePath, repoUrl string, factory ContainerFactory) (*Session, err
 		ws:        ws,
 		factory:   factory,
 		state:     StateInit,
+		log:       log,
 	}, nil
 }
 
 func (s *Session) Start(ctx context.Context) error {
 	since := time.Now()
-	slog.Info("Start to preparing session")
+	s.log.Info("Start to preparing session")
 	if s.state == StateClosed {
 		return fmt.Errorf("session closed")
 	}
@@ -61,12 +62,12 @@ func (s *Session) Start(ctx context.Context) error {
 	g.Go(func() error {
 		return s.c.Start(gctx, filepath.Join(s.ws.Path, s.Token), s.ws.Cmd)
 	})
-	path, err := prepareWorkspaceDir(s.ws.Path, s.Token)
+	path, err := s.prepareWorkspaceDir(s.ws.Path, s.Token)
 	if err != nil {
 		return err
 	}
 	if s.ws.Repo != "" {
-		go cloneWorkspace(ctx, path, s.ws.Repo)
+		go s.cloneWorkspace(ctx, path, s.ws.Repo)
 	}
 
 	if err := g.Wait(); err != nil {
@@ -83,15 +84,20 @@ func (s *Session) Start(ctx context.Context) error {
 	// }
 	//
 	s.state = StateReady
-	slog.Info(fmt.Sprintf("Finish to prepare session:%v", time.Since(since)))
+	s.log.Info(fmt.Sprintf("Finish to prepare session:%v", time.Since(since)))
 	return nil
 }
 
-func (s *Session) Close(ctx context.Context) error {
+func (s *Session) Close() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if err := s.c.Stop(ctx); err != nil {
+		s.log.Error("Penits 1")
 		return fmt.Errorf("Failed to stop container: %w", err)
 	}
 	if err := s.c.Remove(ctx); err != nil {
+		s.log.Error("Penits 2")
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
 	if err := os.RemoveAll(filepath.Join(s.ws.Path, s.Token)); err != nil {
@@ -133,10 +139,10 @@ func defaultCmd(cmd []string) []string {
 	return cmd
 }
 
-func cloneWorkspace(ctx context.Context, path, url string) {
-	slog.Info("Start clone workspace")
+func (s *Session) cloneWorkspace(ctx context.Context, path, url string) {
+	s.log.Info("Start clone workspace")
 	if url == "" || path == "" {
-		slog.Error(fmt.Sprintf("Params are invalid, url:%s path:%s", url, path))
+		s.log.Error(fmt.Sprintf("Params are invalid, url:%s path:%s", url, path))
 		return
 	}
 	args := []string{
@@ -155,22 +161,22 @@ func cloneWorkspace(ctx context.Context, path, url string) {
 	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
-		slog.Error(fmt.Sprintf("Failded fetching repo: %v, %s", err, stderr.String()))
+		s.log.Error(fmt.Sprintf("Failded fetching repo: %v, %s", err, stderr.String()))
 		return
 	}
 
 	if entities, err := os.ReadDir(path); err != nil || len(entities) == 0 {
 		if err != nil {
-			slog.Error(fmt.Sprintf("Failed to check workspace: %v", err))
+			s.log.Error(fmt.Sprintf("Failed to check workspace: %v", err))
 			return
 
 		}
-		slog.Error("Workspace is empty")
+		s.log.Error("Workspace is empty")
 	}
-	slog.Info("Finish clone workspace")
+	s.log.Info("Finish clone workspace")
 }
 
-func prepareWorkspaceDir(base, token string) (string, error) {
+func (s *Session) prepareWorkspaceDir(base, token string) (string, error) {
 	if base == "" || token == "" {
 		return "", fmt.Errorf("Failed to prepare Workspace dir. Base: %s, Token: %s", base, token)
 	}
@@ -178,7 +184,7 @@ func prepareWorkspaceDir(base, token string) (string, error) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", err
 	}
-	slog.Info(path)
+	s.log.Info(path)
 	return path, nil
 
 }

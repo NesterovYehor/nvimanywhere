@@ -11,6 +11,7 @@ import (
 	"nvimanywhere/internal/config"
 	"nvimanywhere/internal/container"
 	"nvimanywhere/internal/handlers"
+	"nvimanywhere/internal/logging"
 	"nvimanywhere/internal/router"
 	"nvimanywhere/internal/sessions"
 	"nvimanywhere/internal/templates"
@@ -20,7 +21,7 @@ import (
 	"time"
 )
 
-func NewHTTPServer(cfg *config.Config, h *handlers.Handler) *http.Server {
+func NewHTTPServer(cfg *config.Config, h *handlers.Handler, log *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	router.AddRoutes(mux, h)
 
@@ -58,7 +59,11 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	raw := container.NewFactory(*cfg.Container)
+	log, closeLog, err := logging.NewLogger(cfg)
+	if err != nil {
+		return err
+	}
+	raw := container.NewFactory(*cfg.Container, log)
 	factory := func() (sessions.Container, error) {
 		c, err := raw()
 		if err != nil {
@@ -67,9 +72,9 @@ func run(ctx context.Context) error {
 		return c, nil
 	}
 
-	h := handlers.NewHandler(tc, cfg, factory)
+	h := handlers.NewHandler(tc, cfg, factory, ctx, log)
 
-	srv := NewHTTPServer(cfg, h)
+	srv := NewHTTPServer(cfg, h, log)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -87,6 +92,7 @@ func run(ctx context.Context) error {
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return err
 		}
+		closeLog()
 		return nil
 	case err := <-errCh:
 		return err

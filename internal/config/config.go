@@ -20,8 +20,10 @@ type Container struct {
 }
 
 type Config struct {
-	HTTP      *Http      `yaml:"http"`
-	Container *Container `yaml:"container"`
+	HTTP        *Http      `yaml:"http"`
+	Container   *Container `yaml:"container"`
+	LogFilePath string     `yaml:"log_file_path"`
+	Env         string     `yaml:"env"`
 }
 
 // Load reads YAML at path, applies env overrides, fills defaults,

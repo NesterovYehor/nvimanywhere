@@ -19,9 +19,10 @@ type Container struct {
 	cli   *client.Client
 	image string
 	id    string
+	log   *slog.Logger
 }
 
-func NewFactory(cfg config.Container) func() (*Container, error) {
+func NewFactory(cfg config.Container, log *slog.Logger) func() (*Container, error) {
 	return func() (*Container, error) {
 		{
 			cli, err := client.NewClientWithOpts(
@@ -34,6 +35,7 @@ func NewFactory(cfg config.Container) func() (*Container, error) {
 			return &Container{
 				cli:   cli,
 				image: cfg.Image,
+				log:   log,
 			}, nil
 		}
 	}
@@ -88,10 +90,9 @@ func (c *Container) Start(ctx context.Context, workspace string, cmd []string) e
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return err
 	}
-	slog.Info("Container is starting", "image", c.image, "id", resp.ID)
 	c.id = resp.ID
 
-	slog.Info(fmt.Sprintf("Finish to prepare container: %v", time.Since(since)))
+	c.log.Info(fmt.Sprintf("Finish to prepare container: %v", time.Since(since)))
 	return nil
 }
 
@@ -122,13 +123,15 @@ func (c *Container) Attach(ctx context.Context) (r io.Reader, w io.Writer, wait 
 			return nil
 		}
 	}
-	slog.Info("Container Attached")
+	c.log.Info("Container Attached")
 	return r, w, wait, nil
 }
+
 func (c *Container) Stop(ctx context.Context) error {
 	if c.id == "" {
 		return errors.ContainerNotStarted
 	}
+	c.log.Info("container closing")
 	return c.cli.ContainerStop(ctx, c.id, container.StopOptions{})
 }
 
@@ -137,10 +140,11 @@ func (c *Container) Remove(ctx context.Context) error {
 		return errors.ContainerNotStarted
 	}
 	err := c.cli.ContainerRemove(ctx, c.id, container.RemoveOptions{})
-	if err == nil {
-		c.id = "" // mark as gone
+	if err != nil {
+		return err
 	}
-	return err
+	c.id = ""
+	return nil
 }
 
 func (c *Container) ResizePTY(ctx context.Context, cols, rows int) error {

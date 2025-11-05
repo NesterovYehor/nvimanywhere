@@ -19,20 +19,28 @@ import (
 	"github.com/coder/websocket"
 )
 
-var done = make(chan struct{})
-
 type Handler struct {
 	sessions         map[string]*s.Session
 	templates        templates.TemplateCache
 	cfg              *config.Config
+	ctx              context.Context
+	log              *slog.Logger
 	containerFactory s.ContainerFactory
 }
 
-func NewHandler(tc templates.TemplateCache, cfg *config.Config, cf s.ContainerFactory) *Handler {
+func NewHandler(
+	tc templates.TemplateCache,
+	cfg *config.Config,
+	cf s.ContainerFactory,
+	ctx context.Context,
+	log *slog.Logger,
+) *Handler {
 	return &Handler{
 		sessions:         make(map[string]*s.Session),
 		templates:        tc,
 		cfg:              cfg,
+		ctx:              ctx,
+		log:              log,
 		containerFactory: cf,
 	}
 }
@@ -44,25 +52,25 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	if _, err := w.Write([]byte("ok")); err != nil {
-		slog.Error(err.Error())
+		h.log.Error(err.Error())
 	}
 }
 
 func (h *Handler) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowd", http.StatusMethodNotAllowed)
-		slog.Error("Wrong Method: handleStartSession")
+		h.log.Error("Wrong Method: handleStartSession")
 	}
 	data, err := respond.Decode[request.CreateSessionRequest](r)
 	if err != nil {
 		http.Error(w, "bad json:"+err.Error(), http.StatusBadRequest)
-		slog.Error(err.Error())
+		h.log.Error(err.Error())
 	}
 
-	sess, err := s.New(h.cfg.Container.Workdir, data.Repo, h.containerFactory)
+	sess, err := s.New(h.cfg.Container.Workdir, data.Repo, h.containerFactory, h.log)
 	if err != nil {
 		http.Error(w, "Failed to create Session:"+err.Error(), http.StatusBadRequest)
-		slog.Error(err.Error())
+		h.log.Error(err.Error())
 		return
 	}
 	h.sessions[sess.Token] = sess
@@ -70,14 +78,14 @@ func (h *Handler) HandleStartSession(w http.ResponseWriter, r *http.Request) {
 		"endpoint": "/sessions/" + sess.Token,
 	}
 	if err := respond.Encode(w, int(http.StatusOK), resp); err != nil {
-		slog.Error(err.Error())
+		h.log.Error(err.Error())
 	}
 }
 
 func (h *Handler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowd", http.StatusMethodNotAllowed)
-		slog.Error("Wrong Method: handleIndex")
+		h.log.Error("Wrong Method: handleIndex")
 		return
 	}
 
@@ -85,13 +93,13 @@ func (h *Handler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 
 	temp := h.templates["index"]
 	if temp == nil {
-		handleError(w, "Inner server error", fmt.Errorf("Unknown template"), http.StatusServiceUnavailable)
+		h.handleError(w, "Inner server error", fmt.Errorf("Unknown template"), http.StatusServiceUnavailable)
 		return
 	}
 	if err := temp.Execute(w, struct {
 		Title string
 	}{Title: "NvimAnywhere"}); err != nil {
-		handleError(w, "Inner server error", fmt.Errorf("Failed to make a response: err"), http.StatusServiceUnavailable)
+		h.handleError(w, "Inner server error", fmt.Errorf("Failed to make a response: err"), http.StatusServiceUnavailable)
 		return
 	}
 }
@@ -99,27 +107,27 @@ func (h *Handler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleSessionPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowd", http.StatusMethodNotAllowed)
-		slog.Error("Wrong Method: handleSessionPage")
+		h.log.Error("Wrong Method: handleSessionPage")
 		return
 	}
 
 	token, ok := tokenFromPath(r)
 	if !ok {
 		http.Error(w, "No token found", http.StatusBadRequest)
-		slog.Error("No token found: token", "token", token)
+		h.log.Error("No token found: token", "token", token)
 		return
 	}
 	sess := h.sessions[token]
 	if sess == nil {
 		http.Error(w, "No session found", http.StatusNotFound)
-		slog.Error("No session found: token", "token", token)
+		h.log.Error("No session found: token", "token", token)
 		return
 	}
 	temp := h.templates["session"]
 
 	if temp == nil {
 		http.Error(w, "Inner server error", http.StatusServiceUnavailable)
-		slog.Error("Unknown template")
+		h.log.Error("Unknown template")
 		return
 	}
 	if err := temp.Execute(w, struct {
@@ -127,7 +135,7 @@ func (h *Handler) HandleSessionPage(w http.ResponseWriter, r *http.Request) {
 		Token string
 	}{Title: "NvimAnywhere", Token: token}); err != nil {
 		http.Error(w, "Inner server error", http.StatusServiceUnavailable)
-		slog.Error("Failed to make a response: err", "err", err)
+		h.log.Error("Failed to make a response: err", "err", err)
 		return
 	}
 
@@ -135,10 +143,11 @@ func (h *Handler) HandleSessionPage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 	var errCh = make(chan error)
+	var done = make(chan struct{})
 	token := r.URL.Query().Get("token")
 	sess := h.sessions[token]
 	if sess == nil {
-		handleError(w, "invalid/expired token", nil, http.StatusUnauthorized)
+		h.handleError(w, "invalid/expired token", nil, http.StatusUnauthorized)
 		return
 	}
 
@@ -146,17 +155,17 @@ func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 		CompressionMode: websocket.CompressionDisabled,
 	})
 	if err != nil {
-		handleError(w, "Failed to create websocket conn", err, http.StatusInternalServerError)
+		h.handleError(w, "Failed to create websocket conn", err, http.StatusInternalServerError)
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithCancel(h.ctx)
 	defer cancel()
 
-	onClose := closeAll(ctx, conn, sess)
+	onClose := closeAll(ctx, conn, sess, h.log)
 
 	ptyR, ptyW, wait, err := startSession(ctx, sess)
 	if err != nil {
-		handleError(w, "", err, http.StatusInternalServerError)
+		h.handleError(w, "", err, http.StatusInternalServerError)
 		return
 	}
 
@@ -164,7 +173,11 @@ func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		if err := bridge.PTYToWS(ctx); err != nil {
-			errCh <- err
+			if err == io.EOF {
+				done <- struct{}{}
+			} else {
+				errCh <- err
+			}
 		}
 	}()
 
@@ -181,6 +194,10 @@ func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	select {
+	case <-h.ctx.Done():
+		h.log.Info("Shutdown ")
+		onClose("Shutdown")
+		return
 	case <-done:
 		onClose("Finishing")
 		return
@@ -193,18 +210,19 @@ func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 func sendControl(ctx context.Context, ws *websocket.Conn, typ, msg string) {
 	_ = ws.Write(ctx, websocket.MessageText, []byte(`{"type":"`+typ+`","reason":"`+msg+`"}`))
 }
-func closeAll(ctx context.Context, ws *websocket.Conn, sess *sessions.Session) func(string) {
+
+func closeAll(ctx context.Context, ws *websocket.Conn, sess *sessions.Session, log *slog.Logger) func(string) {
 	return func(reason string) {
 		sendControl(ctx, ws, "exit", reason)
 		_ = ws.Close(websocket.StatusNormalClosure, reason)
-		slog.Info("WS closing")
 
-		if err := sess.Close(ctx); err != nil {
-			slog.Error(err.Error())
+		if err := sess.Close(); err != nil {
+			log.Error(err.Error())
 		}
 		if reason != "" {
-			slog.Error(reason)
+			log.Error(reason)
 		}
+
 	}
 }
 
@@ -240,13 +258,13 @@ func onResize(ctx context.Context, s *sessions.Session) func(int, int) error {
 	}
 }
 
-func handleError(w http.ResponseWriter, reason string, err error, status int) {
+func (h *Handler) handleError(w http.ResponseWriter, reason string, err error, status int) {
 	http.Error(w, reason, status)
 	if err != nil {
-		slog.Error(reason + err.Error())
+		h.log.Error(reason + err.Error())
 
 	} else {
-		slog.Error(reason)
+		h.log.Error(reason)
 
 	}
 }
