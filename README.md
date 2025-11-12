@@ -1,5 +1,7 @@
 # 🌀 NvimAnywhere
 
+Traditional local development environments are inconsistent across machines, require setup, and complicate resource management in multi-tenant environments. NvimAnywhere addresses this by providing containerized, ephemeral dev workspaces with predictable behavior.
+
 **NvimAnywhere** is a lightweight, self-hostable service that lets you open and use your personal **Neovim setup directly from the browser** — from anywhere, on any device.  
 It provides a secure, container-isolated environment running Neovim inside Docker, streamed through a WebSocket bridge with a real terminal interface built on **xterm.js**.
 
