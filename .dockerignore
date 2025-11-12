@@ -1,19 +1,36 @@
+# VCS / CI
 .git
 .gitignore
-node_modules
-work-local
-data
-srv
-logs
+.github/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Go build outputs
+bin/
+out/
+build/
+dist/
+*.test
+*.coverprofile
+coverage.*
+
+# Web/node caches (if any)
+**/node_modules/
+**/.pnpm-store/
+
+# Local env / configs (don’t send to build context)
+.env
+config/config.yaml
+config/*.local.yaml
+
+# Tests / fixtures
+**/*_test.go
+testdata/
+
+# Logs
 *.log
-*.env
-.env.*
-config/*.local.*
-config/*.dev.*
-workspaces
-**/data/workspaces
-**/work-local/workspaces
-dist
-bin
-build
+logs/
 

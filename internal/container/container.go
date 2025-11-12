@@ -79,7 +79,8 @@ func (c *Container) Start(ctx context.Context, workspace string, cmd []string) e
 		},
 	}
 
-	hostCfg := &container.HostConfig{Mounts: mounts}
+	hostCfg := &container.HostConfig{Mounts: mounts, LogConfig: container.LogConfig{Type: "none"}}
+	
 	netCfg := &network.NetworkingConfig{}
 
 	resp, err := c.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, "")

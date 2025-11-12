@@ -1,55 +1,27 @@
 # Go
-/bin/
-/build/
-/dist/
-/coverage.out
-*.test
+bin/
+out/
+build/
+dist/
 *.exe
-*.dll
-*.so
-*.dylib
-
-# Modules cache (just in case)
+*.test
+*.coverprofile
+coverage.*
 vendor/
 
-# IDE
-.vscode/
+# Editors
 .idea/
+.vscode/
 *.swp
-*.swo
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Logs & runtime
-logs/
+# Runtime / logs
 *.log
+logs/
 
-# Local config & secrets
-config/*.local.*
-config/*.dev.*
-*.env
-.env.*
-# if you keep a default server.yaml, track only the example:
-config/server.yaml
-!config/server.example.yaml
-
-# Workspaces (never commit user data)
-work-local/
-workspaces/
-data/
-srv/
-**/data/workspaces/
-**/work-local/workspaces/
-
-# Docker artifacts
-*.tar
-docker-compose.override.yml
-
-# Frontend/cache (if any)
-node_modules/
-pnpm-lock.yaml
-package-lock.json
-yarn.lock
-
+# Local env / configs
+.env
+config/*.local.yaml
+docker/sessions/nvim-config

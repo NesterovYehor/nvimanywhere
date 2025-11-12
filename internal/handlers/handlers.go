@@ -169,33 +169,16 @@ func (h *Handler) HandlePTY(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bridge := wsio.NewBridge(conn, ptyR, ptyW, onResize(ctx, sess))
+	bridge := wsio.NewBridge(conn, ptyR, ptyW, wait, onResize(ctx, sess))
 
-	go func() {
-		if err := bridge.PTYToWS(ctx); err != nil {
-			if err == io.EOF {
-				done <- struct{}{}
-			} else {
-				errCh <- err
-			}
-		}
-	}()
+	if err := bridge.Start(ctx); err != nil {
+		h.handleError(w, "", err, http.StatusInternalServerError)
+		return
 
-	go func() {
-		if err := bridge.WSToPTY(ctx); err != nil {
-			errCh <- err
-		}
-	}()
-
-	go func() {
-		if err := bridge.WatchWait(wait); err != nil {
-			errCh <- err
-		}
-	}()
+	}
 
 	select {
 	case <-h.ctx.Done():
-		h.log.Info("Shutdown ")
 		onClose("Shutdown")
 		return
 	case <-done:
