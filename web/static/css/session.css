@@ -1,0 +1,36 @@
+/* ============================================================
+   Session layout (xterm.js)
+   ============================================================ */
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+}
+
+#terminal-wrapper {
+  padding: 12px;
+  box-sizing: border-box;
+  height: 100%;
+}
+
+/* xterm container */
+#terminal {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 5px;
+  height: 100%;
+  min-height: 0;
+  ;
+}
+
+/* xterm internals */
+.xterm,
+.xterm-viewport {
+  width: 100%;
+  height: 100%;
+}

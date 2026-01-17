@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"nvimanywhere/internal/config"
-	"nvimanywhere/internal/container"
 	"nvimanywhere/internal/handlers"
 	"nvimanywhere/internal/logging"
 	"nvimanywhere/internal/router"
@@ -21,7 +20,7 @@ import (
 	"time"
 )
 
-func NewHTTPServer(cfg *config.Config, h *handlers.Handler, log *slog.Logger) *http.Server {
+func NewHTTPServer(cfg *config.Config, h *handlers.App, log *slog.Logger) *http.Server {
 	mux := http.NewServeMux()
 	router.AddRoutes(mux, h)
 
@@ -45,7 +44,7 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	cfgPath, err := GetConfigPath("../../config.yaml")
+	cfgPath, err := GetConfigPath("./config/config.yaml")
 	if err != nil {
 		return err
 	}
@@ -54,30 +53,25 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	log, closeLog, err := logging.NewLogger(cfg)
+	if err != nil {
+		return err
+	}
 	tc, err := templates.NewTemplateCache()
 	if err != nil {
 		return err
 	}
 
-	log, closeLog, err := logging.NewLogger(cfg)
-	if err != nil {
+	if err := sessions.Init(cfg); err != nil {
 		return err
 	}
-	raw := container.NewFactory(*cfg.Container, log)
-	factory := func() (sessions.Container, error) {
-		c, err := raw()
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
-	}
-
-	h := handlers.NewHandler(tc, cfg, factory, ctx, log)
+	h := handlers.InitApp(cfg, log, tc, ctx)
 
 	srv := NewHTTPServer(cfg, h, log)
 
 	errCh := make(chan error, 1)
 	go func() {
+		log.Info("Server Started")
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return

@@ -6,18 +6,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>NvimAnywhere</title>
   <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/shell.css">
 </head>
 
 <body>
   <div id="terminal">
-    <p>Hello
-    <p>
+    <div id="history">
+      <p>
+        <span>Wellcome to Nvim-Anywhere</span>
+      <p class>
+      <p class>
+        <span class="color2">For a list of avalible commands, type</span>
+        <span class="command">'help'</span>
+        <span class="color2">.</span>
+      </p>
+    </div>
+    <div id="command" onclick="('source').focus();">
+      <textarea name="text" id="source" autofocus> </textarea>
+      <div id="liner" onclick="$('texter').focus();">
+        <span id="view"></span>
+        <b class="cursor" id="cursor" style="left: 0px;">█</b>
+      </div>
+    </div>
   </div>
-  <div id="command">
-    <textarea name="text" id="source" autofocus> </textarea>
-    <span id="view"></span>
-  </div>
-  <script src="/static/js/start.js" defer></script>
+  <script src="/static/js/shell.js" defer></script>
 </body>
 
 </html>

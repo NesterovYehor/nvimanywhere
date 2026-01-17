@@ -34,7 +34,6 @@ func NewLogger(cfg *config.Config) (*slog.Logger, func() error, error) {
 		"instance", hostName,
 		"pid", os.Getpid(),
 		"listen_addr", cfg.HTTP.Host+":"+cfg.HTTP.Port,
-		"workspaces_dir", cfg.Container.Workdir,
 		"container_runtime", "docker",
 	)
 

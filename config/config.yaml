@@ -2,8 +2,14 @@ http:
   host: ""
   port: "8088"
 
-container:
-  image: "nvimanywhere-session"
-  workspaces_path: "/Users/yehornesterov/dev/Go/nvimanywhere/data/workspaces"
+session_runtime:
+  image_name: "nvimanywhere/runtime:go"
+  base_path: "/Users/yehornesterov/dev/Go/nvimanywhere/data/workspaces"
+  nvim_config_path: "/Users/yehornesterov/.config/nvim"
+  ws:
+    max_message_size: 32768
+    read_timeout: 20s
+    write_timeout: 10s
+    ping_interval: 10s
 log_file_path: "/Users/yehornesterov/dev/Go/nvimanywhere/data/logs"
 env: "DEV"

@@ -1,136 +1,130 @@
-// --- small utility: debounce ---
+// ============================================================
+// Utils
+// ============================================================
+
 function debounce(fn, delay) {
   let t;
-  return function(...args) {
-    const ctx = this;
+  return (...args) => {
     clearTimeout(t);
-    t = setTimeout(() => fn.apply(ctx, args), delay);
+    t = setTimeout(() => fn(...args), delay);
   };
 }
 
-// 1) Create the terminal instance
+// ============================================================
+// Terminal setup
+// ============================================================
+
 const term = new Terminal({
   cursorBlink: true,
-  convertEol: true,
-  fontFamily:
-    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-  fontSize: 14,
-  theme: {
-    background: '#0d1226',
-    foreground: '#e6e8ee',
-    cursor: '#e6e8ee',
-  },
   scrollback: 2000,
+
+  eraseOnClear: true,
 });
 
 const fitAddon = new FitAddon.FitAddon();
 term.loadAddon(fitAddon);
-// 2) Mount it into the page
-const container = document.getElementById('terminal');
-if (!container) {
-  console.error('Missing <div id="terminal"> in the HTML');
-} else {
-  term.open(container);
-  term.focus()
-}
 
-const token = window.NVIM_ANYWHERE?.token;
-if (!token) {
-  console.error('Missing session token');
-}
+const container = document.getElementById('terminal');
+if (!container) throw new Error('Missing #terminal');
+
+term.open(container);
+term.focus();
+
+// ============================================================
+// WebSocket
+// ============================================================
 
 const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-const ws = new WebSocket(
-  `${proto}://${location.host}/pty?token=${encodeURIComponent(token || '')}`,
-);
+const ws = new WebSocket(`${proto}://${location.host}${location.pathname}`);
 ws.binaryType = 'arraybuffer';
 
-// Reuse encoders/decoders to avoid per-keystroke allocations
 const enc = new TextEncoder();
-const dec = new TextDecoder();
 
-if (document.fonts?.ready) {
-  document.fonts.ready.then(() => {
-    fitAddon.fit();
-    sendResize(term.cols, term.rows);
-  });
-} else {
+// ============================================================
+// Initial fit + resize
+// ============================================================
+
+function sendResize(cols, rows) {
+  if (
+    ws.readyState !== WebSocket.OPEN ||
+    cols <= 0 ||
+    rows <= 0
+  ) {
+    return;
+  }
+
+  ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+}
+
+function fitAndResize() {
   fitAddon.fit();
   sendResize(term.cols, term.rows);
 }
 
-// Send initial resize once the socket opens
-ws.addEventListener(
-  'open',
-  () => {
-    sendResize(term.cols, term.rows);
-  },
-  { once: true },
-);
+requestAnimationFrame(fitAndResize);
 
+if (document.fonts?.ready) {
+  document.fonts.ready.then(fitAndResize);
+}
 
-// Tiny banner (optional)
-term.write('NvimAnywhere terminal\r\n');
-term.write('---------------------------------------\r\n\r\n$ ');
+ws.addEventListener('open', fitAndResize, { once: true });
 
-// Keystrokes → server (binary)
+// ============================================================
+// Input → server
+// ============================================================
+
 term.onData((data) => {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(enc.encode(data));
   }
 });
 
-// Server → terminal
+// ============================================================
+// Server → terminal (RAW BYTES ONLY)
+// ============================================================
+
 ws.addEventListener('message', (ev) => {
   if (typeof ev.data === 'string') {
     try {
       const m = JSON.parse(ev.data);
-      if (m && m.type === 'exit') {
+      if (m?.type === 'exit') {
         term.write('\r\n\x1b[31m[disconnected]\x1b[0m\r\n');
       }
-    } catch {
-      // ignore unknown control frames
-    }
+    } catch { }
     return;
   }
-  // binary PTY data
-  const text = dec.decode(new Uint8Array(ev.data));
-  term.write(text);
+
+  term.write(new Uint8Array(ev.data));
 });
 
-// Control: send resize (JSON text)
-function sendResize(cols, rows) {
-  if (typeof cols !== 'number' || typeof rows !== 'number') return;
-  if (cols <= 0 || rows <= 0) return;
+// ============================================================
+// Needed for signal to server that tab is closing so it can close session
+// ============================================================
+window.addEventListener("beforeunload", () => {
   if (ws.readyState === WebSocket.OPEN) {
-    console.log(JSON.stringify({ type: 'resize', cols: cols, rows: rows }))
-    ws.send(JSON.stringify({ type: 'resize', cols: cols, rows: rows }));
+    ws.send(JSON.stringify({ type: "disconnect" }))
   }
-}
+})
 
-// Debounced window resize → send one resize after layout settles
-const sendResizeDebounced = debounce(() => {
-  sendResize(term.cols, term.rows);
-}, 100);
 
-window.addEventListener('resize', sendResizeDebounced);
+// ============================================================
+// Resize handling
+// ============================================================
 
-// When xterm recalculates its own size (e.g., container change)
-term.onResize(({ cols, rows }) => sendResize(cols, rows));
+const resizeDebounced = debounce(fitAndResize, 100);
 
-// (Better) Observe container size changes too; debounce to avoid bursts
-if ('ResizeObserver' in window && container) {
-  const ro = new ResizeObserver(
-    debounce(() => {
-      // if you use xterm fit addon, call fit() here first
-      sendResize(term.cols, term.rows);
-    }, 80),
-  );
+window.addEventListener('resize', resizeDebounced);
+
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(resizeDebounced);
   ro.observe(container);
 }
 
-ws.addEventListener("close", () => {
-  window.location.href = "/";
-});
+// ============================================================
+// Cleanup
+// ============================================================
 
+ws.addEventListener('close', () => {
+  window.location.href = '/';
+});
 

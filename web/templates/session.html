@@ -8,6 +8,7 @@
 
   <link rel="stylesheet" href="/static/css/xterm.css" />
   <link rel="stylesheet" href="/static/css/base.css" />
+  <link rel="stylesheet" href="/static/css/session.css" />
 </head>
 
 <body>
@@ -15,16 +16,15 @@
     <strong>NvimAnywhere</strong>
   </header>
 
-  <main class="app-main">
-    <div id="terminal" class="term"></div>
+  <main id="terminal-wrapper">
+    <div id="terminal-wrapper">
+      <div id="terminal" class="term"></div>
+    </div>
   </main>
 
   <!-- Load xterm first -->
   <script src="/static/js/xterm.js"></script>
   <script src="/static/js/xterm-addon-fit.js"></script>
-  <script>
-    window.NVIM_ANYWHERE = {token: "{{.Token}}"};
-  </script>
   <!-- Then your session script -->
   <script src="/static/js/session.js"></script>
 </body>

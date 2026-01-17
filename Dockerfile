@@ -2,34 +2,41 @@
 FROM golang:1.25-alpine AS builder
 WORKDIR /src
 
-# Make toolchain auto-fetch patch versions; build static
-ENV CGO_ENABLED=0 GOTOOLCHAIN=auto
+# Deterministic static build
+ENV CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64 \
+    GOTOOLCHAIN=auto
 
-# Needed for some modules + TLS during "go mod download"
+# Needed for go modules + TLS
 RUN apk add --no-cache ca-certificates git
 
-# Cache deps first
+# Cache dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source (includes embedded web assets)
+# Copy source
 COPY . .
 
-# Build the gateway binary (cmd/gateway)
-RUN go build -trimpath -ldflags='-s -w' -o /out/nvimanywhere ./cmd/gateway
+# Build binary
+RUN go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/nvimanywhere \
+    ./cmd/gateway
 
 # ------------ 2) Runtime stage ------------
-# Minimal, non-root, includes CA certs
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /app
 
-# Copy binary only (no config baked in)
+# Copy binary only
 COPY --from=builder /out/nvimanywhere /app/nvimanywhere
 
-# Default config path inside the container (must be mounted at run)
+# Default server config path (must be mounted)
 ENV NVA_CONFIG=/etc/nva/config.yaml
 
 EXPOSE 8080
 USER nonroot:nonroot
+
 ENTRYPOINT ["/app/nvimanywhere"]
 

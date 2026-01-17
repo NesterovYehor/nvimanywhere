@@ -3,146 +3,185 @@ package sessions
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
+	"nvimanywhere/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"golang.org/x/sync/errgroup"
 )
 
-func New(workspacePath, repoUrl string, factory ContainerFactory, log *slog.Logger) (*Session, error) {
-	token, err := newToken(8)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create token")
-	}
-	if factory == nil {
-		return nil, fmt.Errorf("nil ContainerFactory")
-	}
-	if workspacePath == "" {
-		return nil, fmt.Errorf("Workspace path must be absolute")
-	}
+var initOnce sync.Once
+var initErr error
 
-	ws := Workspace{
-		Repo: repoUrl,
-		Path: workspacePath,
-		Cmd:  []string{"nvim", "/workspace"},
-	}
+func Init(cfg *config.Config) error {
+	initOnce.Do(func() {
+		if err := initRunner(cfg.SessionRuntime); err != nil {
+			initErr = fmt.Errorf("init runtime: %w", err)
+			return
+		}
 
-	return &Session{
-		Token:     token,
-		CreatedAt: time.Now(),
-		ws:        ws,
-		factory:   factory,
-		state:     StateInit,
-		log:       log,
-	}, nil
+		if err := os.MkdirAll(cfg.SessionRuntime.BasePath, 0o755); err != nil {
+			initErr = fmt.Errorf(
+				"create workspaces dir %q: %w",
+				cfg.SessionRuntime.BasePath,
+				err,
+			)
+			return
+		}
+	})
+
+	return initErr
 }
 
-func (s *Session) Start(ctx context.Context) error {
-	since := time.Now()
-	s.log.Info("Start to preparing session")
-	if s.state == StateClosed {
-		return fmt.Errorf("session closed")
+func StartNewSession(parentCtx context.Context, cfg *config.SessionRuntime, url, workspaceEndpoint string) (*Session, error) {
+	ctx, cancel := context.WithCancel(parentCtx)
+
+	s := &Session{
+		ctx:       ctx,
+		cancel:    cancel,
+		createdAt: time.Now(),
+		repoUrl:   url,
+		cfg:       cfg,
+		rootPath:  filepath.Join(cfg.BasePath, workspaceEndpoint),
 	}
-	s.state = StateStarting
-	c, err := s.factory()
+
+	if err := prepareWorkspaceDir(s.rootPath); err != nil {
+		cancel()
+		return nil, err
+	}
+	if s.repoUrl != "" {
+		go s.cloneWorkspace()
+	}
+	id, err := getRunner().start(ctx, s.rootPath)
 	if err != nil {
-		return fmt.Errorf("Failed to start container:%w", err)
+		cancel()
+		return nil, err
 	}
+	s.runtimeId = id
 
-	s.c = c
-	g, gctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return s.c.Start(gctx, filepath.Join(s.ws.Path, s.Token), s.ws.Cmd)
-	})
-	path, err := s.prepareWorkspaceDir(s.ws.Path, s.Token)
-	if err != nil {
-		return err
-	}
-	if s.ws.Repo != "" {
-		go s.cloneWorkspace(ctx, path, s.ws.Repo)
-	}
-
-	if err := g.Wait(); err != nil {
-		s.state, s.lastErr = StateFailed, err
-		return err
-	}
-
-	// if s.Repo != "" {
-	// 	if err := verifyGitRepo(ctx, s.ws.RepoDir); err != nil {
-	// 		_ = s.teardown(ctx)
-	// 		s.state, s.lastErr = StateFailed, err
-	// 		return err
-	// 	}
-	// }
-	//
-	s.state = StateReady
-	s.log.Info(fmt.Sprintf("Finish to prepare session:%v", time.Since(since)))
-	return nil
+	return s, nil
 }
 
 func (s *Session) Close() error {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	defer cancel()
 
-	if err := s.c.Stop(ctx); err != nil {
-		s.log.Error("Penits 1")
-		return fmt.Errorf("Failed to stop container: %w", err)
+	if err := getRunner().terminateRuntime(ctx, s.runtimeId); err != nil {
+		return fmt.Errorf("Failed to terminate Runtime: %w", err)
 	}
-	if err := s.c.Remove(ctx); err != nil {
-		s.log.Error("Penits 2")
-		return fmt.Errorf("Failed to remove container: %w", err)
-	}
-	if err := os.RemoveAll(filepath.Join(s.ws.Path, s.Token)); err != nil {
+	if err := os.RemoveAll(s.rootPath); err != nil {
 		return fmt.Errorf("Failed to remove workspace: %w", err)
 	}
 	return nil
 }
 
-func (s *Session) Attach(ctx context.Context) (r io.Reader, w io.Writer, wait func() error, err error) {
-	if s.c == nil {
-		return nil, nil, nil, fmt.Errorf("Container is not started:%w", err)
-	}
-	return s.c.Attach(ctx)
+func (s *Session) Attach(conn *websocket.Conn) error {
+	conn.SetReadLimit(s.cfg.WS.MaxMessageSize)
+	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(s.cfg.WS.ReadTimeout)); return nil })
+	defer s.cancel()
+	output, input, closeAttach, err := getRunner().attach(s.ctx, s.runtimeId)
 
-}
-func (s *Session) ResizePTY(ctx context.Context, cols, rows int) error {
-	if s.c == nil {
-		return fmt.Errorf("Container is not started")
-	}
-	return s.c.ResizePTY(ctx, cols, rows)
-}
-
-//	func (s *Session) tokenHash() string {
-//		sum := sha256.Sum256([]byte(s.Token))
-//		return hex.EncodeToString(sum[:8])
-//	}
-func newToken(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("Generating random bytes: %w", err)
+	if err != nil {
+		return err
 	}
 
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-func defaultCmd(cmd []string) []string {
-	if len(cmd) == 0 {
-		return []string{"nvim"}
+	defer closeAttach()
+
+	grp, gctx := errgroup.WithContext(s.ctx)
+
+	grp.Go(func() error { return s.pumpInput(gctx, conn, input) })
+	grp.Go(func() error { return s.pumpOutput(gctx, conn, output) })
+	grp.Go(func() error { return s.pingConn(gctx, conn) })
+
+	if err := grp.Wait(); err != nil {
+		return err
 	}
-	return cmd
+	return nil
 }
 
-func (s *Session) cloneWorkspace(ctx context.Context, path, url string) {
-	s.log.Info("Start clone workspace")
-	if url == "" || path == "" {
-		s.log.Error(fmt.Sprintf("Params are invalid, url:%s path:%s", url, path))
+func (s *Session) pingConn(ctx context.Context, ws *websocket.Conn) error {
+	ticker := time.NewTicker(s.cfg.WS.PingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(s.cfg.WS.WriteTimeout)); err != nil {
+
+				s.cancel()
+				return err
+			}
+		}
+	}
+
+}
+
+func (s *Session) pumpInput(ctx context.Context, conn *websocket.Conn, input io.Writer) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		t, message, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("Failed to read data from WS conn: %w", err)
+		}
+
+		switch t {
+		case websocket.BinaryMessage:
+			if _, err := input.Write(message); err != nil {
+				return fmt.Errorf("Failed to write data to terminal input chan: %w", err)
+			}
+
+		case websocket.TextMessage:
+			var m struct {
+				Cols int `json:"cols"`
+				Rows int `json:"rows"`
+			}
+			if err := json.Unmarshal(message, &m); err == nil && m.Cols > 0 && m.Rows > 0 {
+				if err := s.resizePTY(ctx, m.Cols, m.Rows); err != nil {
+					return fmt.Errorf("Failed to resize terminal : %w", err)
+				}
+			}
+		}
+	}
+}
+
+func (s *Session) pumpOutput(ctx context.Context, conn *websocket.Conn, output io.Reader) error {
+	buf := make([]byte, 32*1024)
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		n, err := output.Read(buf)
+		if err != nil {
+			return fmt.Errorf("Failed to read data from terminal output chan: %w", err)
+		}
+		if n > 0 {
+			conn.SetWriteDeadline(time.Now().Add(s.cfg.WS.WriteTimeout))
+			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				return fmt.Errorf("Failed to write data to WS Conn: %w", err)
+			}
+		}
+	}
+}
+
+func (s *Session) resizePTY(ctx context.Context, cols, rows int) error {
+	return getRunner().resizePTY(ctx, cols, rows, s.runtimeId)
+}
+
+func (s *Session) cloneWorkspace() {
+	if s.repoUrl == "" || s.rootPath == "" {
+		s.fail(fmt.Errorf("Params are invalid, url:%s path:%s", s.repoUrl, s.rootPath))
 		return
 	}
 	args := []string{
@@ -151,40 +190,42 @@ func (s *Session) cloneWorkspace(ctx context.Context, path, url string) {
 		"--filter=blob:none",
 		"--single-branch",
 		"--no-tags",
-		url,
-		path,
+		s.repoUrl,
+		s.rootPath,
 	}
 
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(s.ctx, "git", args...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
-		s.log.Error(fmt.Sprintf("Failded fetching repo: %v, %s", err, stderr.String()))
+		s.fail(fmt.Errorf("Failded fetching repo: %v, %s", err, stderr.String()))
 		return
 	}
 
-	if entities, err := os.ReadDir(path); err != nil || len(entities) == 0 {
+	if entities, err := os.ReadDir(s.rootPath); err != nil || len(entities) == 0 {
 		if err != nil {
-			s.log.Error(fmt.Sprintf("Failed to check workspace: %v", err))
+			s.fail(fmt.Errorf("Failed to check workspace: %v", err))
 			return
-
 		}
-		s.log.Error("Workspace is empty")
+		s.fail(fmt.Errorf("Workspace is empty"))
+		return
 	}
-	s.log.Info("Finish clone workspace")
 }
 
-func (s *Session) prepareWorkspaceDir(base, token string) (string, error) {
-	if base == "" || token == "" {
-		return "", fmt.Errorf("Failed to prepare Workspace dir. Base: %s, Token: %s", base, token)
+func prepareWorkspaceDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("Failed to prepare Workspace dir: %s", path)
 	}
-	path := filepath.Join(base, token)
 	if err := os.MkdirAll(path, 0o755); err != nil {
-		return "", err
+		return err
 	}
-	s.log.Info(path)
-	return path, nil
+	return nil
+}
 
+func (s *Session) fail(err error) {
+	s.errOnce.Do(func() {
+		s.lastError = err
+	})
 }

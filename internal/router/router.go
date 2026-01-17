@@ -8,7 +8,7 @@ import (
 	"nvimanywhere/internal/handlers"
 )
 
-func AddRoutes(mux *http.ServeMux, h *handlers.Handler) error{
+func AddRoutes(mux *http.ServeMux, h *handlers.App) error {
 	staticRoot, err := fs.Sub(webfs.StaticFS, "web/static")
 	if err != nil {
 		return err
@@ -21,8 +21,7 @@ func AddRoutes(mux *http.ServeMux, h *handlers.Handler) error{
 	mux.Handle("/static/", static)
 	mux.HandleFunc("/health", h.HandleHealth)
 	mux.HandleFunc("/", h.HandleIndex)
-	mux.HandleFunc("/sessions", h.HandleStartSession)
-	mux.HandleFunc("/sessions/", h.HandleSessionPage)
-	mux.HandleFunc("/pty", h.HandlePTY)
+	mux.HandleFunc("/sessions/new", h.HandleStartSession)
+	mux.HandleFunc("/sessions/", h.HandleSession)
 	return nil
 }
